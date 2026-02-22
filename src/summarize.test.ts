@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { groupSessionsByDateAndProject, buildSummaryPrompt, parseSummaryResponse } from "./summarize";
+import { groupSessionsByDateAndProject, buildSummaryPrompt, parseSummaryResponse, logicalDate } from "./summarize";
 import { initDb, closeDb } from "./db";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
@@ -49,21 +49,34 @@ describe("summarize", () => {
     const prompt = buildSummaryPrompt(groups[0]);
     expect(prompt).toContain("Fix the bug");
     expect(prompt).toContain("Add tests");
-    expect(prompt).toContain("engineering journal");
+    expect(prompt).toContain("engineering journal entry");
   });
 
-  test("parseSummaryResponse extracts summary, topics, and commits", () => {
-    const response = `SUMMARY:
-Today I worked on fixing the auth bug and adding test coverage.
-
-TOPICS:
-["auth bug", "test coverage"]
-
-COMMITS:
-["fix: resolve auth timeout"]`;
+  test("parseSummaryResponse extracts headline, summary, and topics", () => {
+    const response = `HEADLINE: Shipped onboarding flow and fixed auth bug
+SUMMARY: Spent the morning building the onboarding wizard. After lunch, fixed a production OAuth token expiry issue caused by clock skew.
+TOPICS: ["onboarding flow", "OAuth token bug", "production hotfix"]`;
     const result = parseSummaryResponse(response);
-    expect(result.summary).toContain("auth bug");
-    expect(result.topics).toEqual(["auth bug", "test coverage"]);
-    expect(result.commits).toEqual(["fix: resolve auth timeout"]);
+    expect(result.headline).toBe("Shipped onboarding flow and fixed auth bug");
+    expect(result.summary).toContain("onboarding wizard");
+    expect(result.topics).toEqual(["onboarding flow", "OAuth token bug", "production hotfix"]);
+  });
+});
+
+describe("logicalDate", () => {
+  test("logicalDate returns same day for afternoon timestamps", () => {
+    expect(logicalDate("2026-02-21 17:37", 5)).toBe("2026-02-21");
+  });
+
+  test("logicalDate returns previous day for early morning timestamps", () => {
+    expect(logicalDate("2026-02-21 03:30", 5)).toBe("2026-02-20");
+  });
+
+  test("logicalDate returns same day at exactly day_start_hour", () => {
+    expect(logicalDate("2026-02-21 05:00", 5)).toBe("2026-02-21");
+  });
+
+  test("logicalDate handles midnight boundary", () => {
+    expect(logicalDate("2026-02-21 00:00", 5)).toBe("2026-02-20");
   });
 });
