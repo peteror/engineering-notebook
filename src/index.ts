@@ -57,9 +57,24 @@ switch (command) {
     closeDb();
     break;
   }
-  case "serve":
-    console.log("TODO: serve");
+  case "serve": {
+    const config = loadConfig();
+    const db = initDb(config.db_path);
+    const { createApp } = await import("./web/server");
+    const app = createApp(db);
+
+    const port = (() => {
+      const portIdx = process.argv.indexOf("--port");
+      return portIdx !== -1 ? parseInt(process.argv[portIdx + 1]) : config.port;
+    })();
+
+    console.log(`Engineering Notebook running at http://localhost:${port}`);
+    Bun.serve({
+      fetch: app.fetch,
+      port,
+    });
     break;
+  }
   case "config":
     console.log("TODO: config");
     break;
