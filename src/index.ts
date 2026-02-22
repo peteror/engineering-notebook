@@ -42,6 +42,16 @@ switch (command) {
     const filterDate = dateIdx !== -1 ? process.argv[dateIdx + 1] : undefined;
     const projectIdx = process.argv.indexOf("--project");
     const filterProject = projectIdx !== -1 ? process.argv[projectIdx + 1] : undefined;
+    const all = process.argv.includes("--all");
+
+    if (!filterDate && !filterProject && !all) {
+      const { groupSessionsByDateAndProject } = await import("./summarize");
+      const groups = groupSessionsByDateAndProject(db);
+      console.log(`Found ${groups.length} unsummarized date+project group(s).`);
+      console.log("Use --all to summarize everything, or --date/--project to filter.");
+      closeDb();
+      break;
+    }
 
     const { summarizeAll } = await import("./summarize");
     const result = await summarizeAll(db, filterDate, filterProject, (done, total, group) => {
@@ -50,7 +60,7 @@ switch (command) {
 
     console.log(`Summarized: ${result.summarized}, Errors: ${result.errors.length}`);
     if (result.errors.length > 0) {
-      for (const err of result.errors) {
+      for (const err of result.errors.slice(0, 10)) {
         console.error(`  ${err}`);
       }
     }
