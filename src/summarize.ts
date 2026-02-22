@@ -35,28 +35,66 @@ type ConvoRow = {
   conversation_markdown: string;
 };
 
-/** Group unsummarized sessions by date and project */
+/** Split a conversation markdown into chunks keyed by logical date.
+ *  Lines with timestamps in the new format **Speaker (YYYY-MM-DD HH:MM):** are
+ *  assigned to their logical date. Non-timestamped lines attach to the most
+ *  recent date. If no timestamps are parseable (old format), returns null so
+ *  the caller can fall back to the session's started_at date. */
+export function splitConversationByDay(
+  markdown: string,
+  dayStartHour: number
+): Map<string, string> | null {
+  const byDay = new Map<string, string[]>();
+  let currentDay: string | null = null;
+  let foundAny = false;
+
+  for (const line of markdown.split("\n")) {
+    // Match **Speaker (YYYY-MM-DD HH:MM):**
+    const match = line.match(
+      /^\*\*\w+\s+\((\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2})\):\*\*/
+    );
+    if (match) {
+      foundAny = true;
+      currentDay = logicalDate(match[1], dayStartHour);
+      if (!byDay.has(currentDay)) byDay.set(currentDay, []);
+      byDay.get(currentDay)!.push(line);
+    } else if (currentDay) {
+      // Non-message lines (continuation, blank) attach to current day
+      byDay.get(currentDay)!.push(line);
+    }
+    // Lines before the first timestamped message are dropped (headers, etc.)
+  }
+
+  if (!foundAny) return null;
+
+  const result = new Map<string, string>();
+  for (const [day, lines] of byDay) {
+    result.set(day, lines.join("\n"));
+  }
+  return result;
+}
+
+/** Group unsummarized sessions by date and project.
+ *  Splits conversations by logical day boundary so a session spanning midnight
+ *  contributes messages to the correct date's journal entry. */
 export function groupSessionsByDateAndProject(
   db: Database,
   filterDate?: string,
-  filterProject?: string
+  filterProject?: string,
+  dayStartHour: number = 5
 ): SessionGroup[] {
-  let whereClause = `
-    WHERE NOT EXISTS (
-      SELECT 1 FROM journal_entries je
-      WHERE je.date = date(s.started_at)
-        AND je.project_id = s.project_id
-    )
-  `;
+  // Build a simple WHERE clause — no NOT EXISTS in SQL.
+  // We filter out already-summarized (project, date) combos in TypeScript
+  // after splitting by logical date, because a single session can now span
+  // multiple dates.
+  const conditions: string[] = [];
   const params: string[] = [];
-  if (filterDate) {
-    whereClause += " AND date(s.started_at) = ?";
-    params.push(filterDate);
-  }
   if (filterProject) {
-    whereClause += " AND s.project_id = ?";
+    conditions.push("s.project_id = ?");
     params.push(filterProject);
   }
+  const whereClause =
+    conditions.length > 0 ? "WHERE " + conditions.join(" AND ") : "";
 
   const rows = db
     .query(
@@ -76,25 +114,79 @@ export function groupSessionsByDateAndProject(
     )
     .all(...params) as ConvoRow[];
 
-  // Group by date+project
+  // Build set of already-summarized (project, date) combos
+  const summarizedRows = db
+    .query(`SELECT project_id, date FROM journal_entries`)
+    .all() as { project_id: string; date: string }[];
+  const summarized = new Set(
+    summarizedRows.map((r) => `${r.date}|${r.project_id}`)
+  );
+
+  // Group by (logical-date, project)
   const groups = new Map<string, SessionGroup>();
+
   for (const row of rows) {
-    const key = `${row.date}|${row.project_id}`;
-    if (!groups.has(key)) {
-      groups.set(key, {
-        date: row.date,
-        projectId: row.project_id,
-        projectName: row.display_name,
-        sessionIds: [],
-        conversations: [],
-      });
+    const dayChunks = splitConversationByDay(
+      row.conversation_markdown,
+      dayStartHour
+    );
+
+    if (dayChunks) {
+      // New-format timestamps: split across logical dates
+      for (const [day, chunk] of dayChunks) {
+        const key = `${day}|${row.project_id}`;
+        if (!groups.has(key)) {
+          groups.set(key, {
+            date: day,
+            projectId: row.project_id,
+            projectName: row.display_name,
+            sessionIds: [],
+            conversations: [],
+          });
+        }
+        const group = groups.get(key)!;
+        if (!group.sessionIds.includes(row.session_id)) {
+          group.sessionIds.push(row.session_id);
+        }
+        group.conversations.push(chunk);
+      }
+    } else {
+      // Old-format timestamps: fall back to session's started_at date
+      const fallbackDay = logicalDate(
+        row.date + " 12:00",
+        dayStartHour
+      );
+      const key = `${fallbackDay}|${row.project_id}`;
+      if (!groups.has(key)) {
+        groups.set(key, {
+          date: fallbackDay,
+          projectId: row.project_id,
+          projectName: row.display_name,
+          sessionIds: [],
+          conversations: [],
+        });
+      }
+      const group = groups.get(key)!;
+      if (!group.sessionIds.includes(row.session_id)) {
+        group.sessionIds.push(row.session_id);
+      }
+      group.conversations.push(row.conversation_markdown);
     }
-    const group = groups.get(key)!;
-    group.sessionIds.push(row.session_id);
-    group.conversations.push(row.conversation_markdown);
   }
 
-  return Array.from(groups.values());
+  // Filter out already-summarized combos
+  const result: SessionGroup[] = [];
+  for (const group of groups.values()) {
+    const key = `${group.date}|${group.projectId}`;
+    if (!summarized.has(key)) {
+      // Apply filterDate check against logical date
+      if (!filterDate || group.date === filterDate) {
+        result.push(group);
+      }
+    }
+  }
+
+  return result;
 }
 
 /** Build the prompt for LLM summarization */
