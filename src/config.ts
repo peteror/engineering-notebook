@@ -1,0 +1,49 @@
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "fs";
+import { dirname, join } from "path";
+import { homedir } from "os";
+
+export type Config = {
+  sources: string[];
+  exclude: string[];
+  db_path: string;
+  port: number;
+};
+
+export function defaultConfig(): Config {
+  const configDir = join(homedir(), ".config", "engineering-notebook");
+  return {
+    sources: ["~/.claude/projects"],
+    exclude: ["-private-tmp*", "*-skill-test-*"],
+    db_path: join(configDir, "notebook.db"),
+    port: 3000,
+  };
+}
+
+export function resolveConfigPath(): string {
+  return join(homedir(), ".config", "engineering-notebook", "config.json");
+}
+
+export function loadConfig(path?: string): Config {
+  const configPath = path ?? resolveConfigPath();
+  if (!existsSync(configPath)) {
+    return defaultConfig();
+  }
+  const raw = readFileSync(configPath, "utf-8");
+  return { ...defaultConfig(), ...JSON.parse(raw) };
+}
+
+export function saveConfig(path: string, config: Config): void {
+  const dir = dirname(path);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+  writeFileSync(path, JSON.stringify(config, null, 2) + "\n");
+}
+
+/** Expand ~ to homedir in a path */
+export function expandPath(p: string): string {
+  if (p.startsWith("~/")) {
+    return join(homedir(), p.slice(2));
+  }
+  return p;
+}
