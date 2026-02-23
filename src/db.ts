@@ -60,6 +60,13 @@ export function initDb(dbPath: string): Database {
     CREATE INDEX IF NOT EXISTS idx_sessions_source ON sessions(source_path);
   `);
 
+  // Migrations
+  try {
+    db.exec(`ALTER TABLE journal_entries ADD COLUMN open_questions TEXT NOT NULL DEFAULT '[]'`);
+  } catch {
+    // Column already exists — ignore
+  }
+
   _db = db;
   return db;
 }
