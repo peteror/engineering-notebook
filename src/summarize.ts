@@ -217,6 +217,8 @@ If the transcripts show NO substantive engineering work — for example, automat
 
 SKIP: <brief reason why this isn't journal-worthy>
 
+Do NOT skip a session just because the transcript is short or appears to be a thin slice of a longer conversation. If real work was discussed — planning, debugging, designing, building — it's journal-worthy even if the transcript only covers the start or end of the effort.
+
 Otherwise, format your response EXACTLY as:
 
 HEADLINE: <one line, what happened today on this project>
