@@ -1,264 +1,190 @@
 import { Database } from "bun:sqlite";
+import { escapeHtml, formatDateShort, formatDate, formatTimeAmPm, formatTime, groupByTimeBucket } from "./helpers";
 
-type SessionDayRow = {
-  id: string;
-  parent_session_id: string | null;
+type JournalEntryRow = {
+  id: number;
+  date: string;
   project_id: string;
   display_name: string;
-  started_at: string;
-  ended_at: string | null;
-  git_branch: string | null;
-  message_count: number;
-  date: string;
-};
-
-type JournalSummaryRow = {
-  date: string;
-  project_id: string;
   headline: string;
   summary: string;
   topics: string;
   session_ids: string;
 };
 
-const PAGE_SIZE = 20;
+type DateProjectsRow = {
+  date: string;
+  projects: string; // comma-separated project display names
+};
 
-export function renderJournal(
-  db: Database,
-  page: number,
-  projectId?: string
-): string {
-  const offset = (page - 1) * PAGE_SIZE;
+/**
+ * Panel 1: Date index with project names under each date.
+ */
+export function renderJournalDateIndex(db: Database, selectedDate?: string): string {
+  const rows = db.query(`
+    SELECT je.date, GROUP_CONCAT(DISTINCT p.display_name) as projects
+    FROM journal_entries je
+    JOIN projects p ON je.project_id = p.id
+    GROUP BY je.date
+    ORDER BY je.date DESC
+  `).all() as DateProjectsRow[];
 
-  const whereClause = projectId ? "WHERE s.project_id = ?" : "";
-  const countWhereClause = projectId ? "WHERE project_id = ?" : "";
-
-  // Query sessions directly, grouped by date
-  const sessions = db
-    .query(
-      `
-    SELECT s.id, s.parent_session_id, s.project_id, p.display_name, s.started_at, s.ended_at,
-           s.git_branch, s.message_count, date(s.started_at) as date
-    FROM sessions s
-    JOIN projects p ON s.project_id = p.id
-    ${whereClause}
-    ORDER BY s.started_at DESC
-    LIMIT ? OFFSET ?
-  `
-    )
-    .all(
-      ...(projectId ? [projectId, PAGE_SIZE * 5, offset * 5] : [PAGE_SIZE * 5, offset * 5])
-    ) as SessionDayRow[];
-
-  const totalSessionCount = db
-    .query(`SELECT count(*) as c FROM sessions ${countWhereClause}`)
-    .get(...(projectId ? [projectId] : [])) as { c: number };
-
-  if (sessions.length === 0) {
-    return `
-      <h2>No sessions yet</h2>
-      <p class="stat">Run <code>notebook ingest</code> to import sessions from your Claude conversations.</p>
-    `;
+  if (rows.length === 0) {
+    return '<div class="empty-state">No journal entries yet.<br>Run <code>notebook summarize</code> to generate them.</div>';
   }
 
-  // Group by date, then by project within each date
-  const byDate = new Map<string, Map<string, SessionDayRow[]>>();
-  for (const session of sessions) {
-    if (!byDate.has(session.date)) {
-      byDate.set(session.date, new Map());
-    }
-    const dateGroup = byDate.get(session.date)!;
-    if (!dateGroup.has(session.project_id)) {
-      dateGroup.set(session.project_id, []);
-    }
-    dateGroup.get(session.project_id)!.push(session);
-  }
-
-  // Pre-fetch journal entry summaries for the dates we have
-  const dates = [...byDate.keys()];
-  const summaryMap = new Map<string, JournalSummaryRow>();
-  if (dates.length > 0) {
-    const datePlaceholders = dates.map(() => "?").join(",");
-    const projectFilter = projectId ? " AND je.project_id = ?" : "";
-    const summaryParams = projectId ? [...dates, projectId] : dates;
-    const summaries = db
-      .query(
-        `
-      SELECT je.date, je.project_id, je.headline, je.summary, je.topics, je.session_ids
-      FROM journal_entries je
-      WHERE je.date IN (${datePlaceholders})${projectFilter}
-    `
-      )
-      .all(...summaryParams) as JournalSummaryRow[];
-
-    for (const s of summaries) {
-      summaryMap.set(`${s.date}|${s.project_id}`, s);
-    }
-  }
+  const dates = rows.map(r => r.date);
+  const projectsByDate = new Map(rows.map(r => [r.date, r.projects]));
+  const buckets = groupByTimeBucket(dates);
 
   let html = "";
-
-  for (const [date, projectGroups] of byDate) {
-    html += `<div class="day-group">`;
-    html += `<div class="day-header">${formatDate(date)}</div>`;
-
-    for (const [projId, projectSessions] of projectGroups) {
-      const displayName = projectSessions[0]!.display_name;
-      const totalMessages = projectSessions.reduce((sum, s) => sum + s.message_count, 0);
-      const earliest = projectSessions[projectSessions.length - 1]!.started_at;
-      const latestSession = projectSessions[0]!;
-      const latest = latestSession.ended_at || latestSession.started_at;
-      const timeRange = `${formatTime(earliest)} - ${formatTime(latest)}`;
-      const branches = [
-        ...new Set(
-          projectSessions
-            .map((s) => s.git_branch)
-            .filter((b): b is string => b !== null)
-        ),
-      ];
-
-      html += `<div class="entry">`;
-      html += `<div class="entry-project">`;
-      html += `<a href="/project/${encodeURIComponent(projId)}" style="color: var(--accent); text-decoration: none;">${escapeHtml(displayName)}</a>`;
-      html += ` <span class="stat">${totalMessages} messages &middot; ${timeRange}`;
-      if (branches.length > 0) {
-        html += ` &middot; ${branches.map((b) => `<code>${escapeHtml(b)}</code>`).join(", ")}`;
-      }
-      html += `</span>`;
-      html += `</div>`;
-
-      // Show journal summary if it exists
-      const summaryKey = `${date}|${projId}`;
-      const summary = summaryMap.get(summaryKey);
-      if (summary) {
-        if (summary.headline) {
-          html += `<div class="entry-headline">${escapeHtml(summary.headline)}</div>`;
-        }
-        html += `<div class="entry-summary">${escapeHtml(summary.summary)}</div>`;
-        const topics: string[] = JSON.parse(summary.topics || "[]");
-        if (topics.length > 0) {
-          html += `<div class="entry-topics">`;
-          for (const topic of topics) {
-            html += `<span class="topic-tag">${escapeHtml(topic)}</span>`;
-          }
-          html += `</div>`;
-        }
-      }
-
-      // Group chained sessions (parent → child) into logical conversations
-      const sessionById = new Map(projectSessions.map((s) => [s.id, s]));
-      const childOf = new Map<string, string[]>();
-      const roots: SessionDayRow[] = [];
-      for (const s of projectSessions) {
-        if (s.parent_session_id && sessionById.has(s.parent_session_id)) {
-          const children = childOf.get(s.parent_session_id) || [];
-          children.push(s.id);
-          childOf.set(s.parent_session_id, children);
-        } else {
-          roots.push(s);
-        }
-      }
-
-      // Build chains: root → child → grandchild...
-      function buildChain(root: SessionDayRow): SessionDayRow[] {
-        const chain = [root];
-        let current = root.id;
-        while (childOf.has(current)) {
-          const kids = childOf.get(current)!;
-          const child = sessionById.get(kids[0]!)!;
-          chain.push(child);
-          current = child.id;
-        }
-        return chain;
-      }
-
-      // List sessions, collapsing chains
-      html += `<div style="margin-top: 0.5rem;">`;
-      for (const root of roots) {
-        const chain = buildChain(root);
-        if (chain.length === 1) {
-          const session = chain[0]!;
-          const sessionTime = `${formatTime(session.started_at)}${session.ended_at ? " - " + formatTime(session.ended_at) : ""}`;
-          html += `<div class="session-item">`;
-          html += `<a class="session-link" href="/session/${encodeURIComponent(session.id)}">${sessionTime}</a>`;
-          html += `<span class="session-meta">${session.message_count} messages`;
-          if (session.git_branch) {
-            html += ` &middot; ${escapeHtml(session.git_branch)}`;
-          }
-          html += `</span>`;
-          html += `</div>`;
-        } else {
-          // Chained session: show combined time range and total messages
-          const first = chain[0]!;
-          const last = chain[chain.length - 1]!;
-          const totalMessages = chain.reduce((sum, s) => sum + s.message_count, 0);
-          const chainStart = formatTime(first.started_at);
-          const chainEnd = last.ended_at ? formatTime(last.ended_at) : formatTime(last.started_at);
-          html += `<div class="session-item">`;
-          html += `<a class="session-link" href="/session/${encodeURIComponent(first.id)}">${chainStart} - ${chainEnd}</a>`;
-          html += `<span class="session-meta">${totalMessages} messages &middot; ${chain.length} continued sessions`;
-          if (first.git_branch) {
-            html += ` &middot; ${escapeHtml(first.git_branch)}`;
-          }
-          html += `</span>`;
-          html += `</div>`;
-        }
-      }
-      html += `</div>`;
-
-      // HTMX expand for conversations
-      const sessionIds = JSON.stringify(projectSessions.map((s) => s.id));
-      const expandId = `convos-${date}-${projId}`.replace(/[^a-zA-Z0-9-]/g, "_");
-      html += `<button class="expand-btn" hx-get="/api/conversations?session_ids=${encodeURIComponent(sessionIds)}" hx-target="#${expandId}" hx-swap="innerHTML">Show conversations</button>`;
-      html += `<div id="${expandId}"></div>`;
-
-      html += `</div>`;
+  for (const [bucketName, bucketDates] of buckets) {
+    html += `<div class="index-section-label">${escapeHtml(bucketName)}</div>`;
+    for (const date of bucketDates) {
+      const isSelected = date === selectedDate;
+      const projects = projectsByDate.get(date) || "";
+      html += `<a class="index-item${isSelected ? " selected" : ""}" href="/?date=${date}" hx-get="/api/journal/entries?date=${date}" hx-target="#panel-entries" hx-push-url="/?date=${date}">`;
+      html += `<div class="index-item-title">${formatDateShort(date)}</div>`;
+      html += `<div class="index-item-sub">${escapeHtml(projects.replace(/,/g, "<br>"))}</div>`;
+      html += `</a>`;
     }
-
-    html += `</div>`;
   }
-
-  // Pagination
-  const estimatedTotalPages = Math.max(
-    1,
-    Math.ceil(totalSessionCount.c / (PAGE_SIZE * 5))
-  );
-  if (estimatedTotalPages > 1) {
-    const baseUrl = projectId ? `/project/${encodeURIComponent(projectId)}` : "/";
-    html += `<div class="pagination">`;
-    if (page > 1) {
-      html += `<a href="${baseUrl}?page=${page - 1}">Previous</a>`;
-    }
-    html += `<span class="stat">Page ${page} of ${estimatedTotalPages}</span>`;
-    if (page < estimatedTotalPages) {
-      html += `<a href="${baseUrl}?page=${page + 1}">Next</a>`;
-    }
-    html += `</div>`;
-  }
-
   return html;
 }
 
-function formatDate(dateStr: string): string {
-  const d = new Date(dateStr + "T12:00:00Z");
-  return d.toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
+/**
+ * Panel 2: Journal entries for a specific date.
+ */
+export function renderJournalEntries(db: Database, date: string, selectedEntryId?: number): string {
+  const entries = db.query(`
+    SELECT je.id, je.date, je.project_id, p.display_name, je.headline, je.summary, je.topics, je.session_ids
+    FROM journal_entries je
+    JOIN projects p ON je.project_id = p.id
+    WHERE je.date = ?
+    ORDER BY p.display_name
+  `).all(date) as JournalEntryRow[];
+
+  let html = `<div class="page-title">${formatDate(date)}</div>`;
+
+  if (entries.length === 0) {
+    html += '<div class="empty-state">No entries for this date.</div>';
+    return html;
+  }
+
+  for (const entry of entries) {
+    const isSelected = entry.id === selectedEntryId;
+    const sessionIds = JSON.parse(entry.session_ids || "[]") as string[];
+    const topics: string[] = JSON.parse(entry.topics || "[]");
+
+    // Compute time range from sessions
+    const timeRange = getSessionTimeRange(db, sessionIds);
+
+    html += `<a class="entry-card${isSelected ? " selected" : ""}" href="/?date=${date}&entry=${entry.id}" hx-get="/api/journal/conversation?entry_id=${entry.id}" hx-target="#panel-detail">`;
+    html += `<div class="entry-label">${escapeHtml(entry.display_name)}</div>`;
+    if (entry.headline) {
+      html += `<div class="entry-headline">${escapeHtml(entry.headline)}</div>`;
+    }
+    html += `<div class="entry-summary">${escapeHtml(entry.summary)}</div>`;
+    if (topics.length > 0) {
+      html += `<div class="entry-tags">`;
+      for (const t of topics) {
+        html += `<span class="entry-tag">${escapeHtml(t)}</span>`;
+      }
+      html += `</div>`;
+    }
+    html += `<div class="entry-stats">${sessionIds.length} session${sessionIds.length !== 1 ? "s" : ""}${timeRange ? ` · ${timeRange}` : ""}</div>`;
+    html += `</a>`;
+  }
+  return html;
 }
 
-function formatTime(isoStr: string): string {
-  // Extract HH:MM from an ISO datetime string
-  const match = isoStr.match(/T(\d{2}:\d{2})/);
-  return match ? match[1]! : isoStr;
+function getSessionTimeRange(db: Database, sessionIds: string[]): string {
+  if (sessionIds.length === 0) return "";
+  const placeholders = sessionIds.map(() => "?").join(",");
+  const row = db.query(`
+    SELECT MIN(started_at) as earliest, MAX(COALESCE(ended_at, started_at)) as latest
+    FROM sessions WHERE id IN (${placeholders})
+  `).get(...sessionIds) as { earliest: string; latest: string } | null;
+  if (!row || !row.earliest) return "";
+  const start = formatTimeAmPm(formatTime(row.earliest));
+  const end = formatTimeAmPm(formatTime(row.latest));
+  return start === end ? start : `${start} – ${end}`;
 }
 
-function escapeHtml(str: string): string {
-  return str
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+/**
+ * Full page content: picks the selected or most recent date,
+ * returns all three panel contents.
+ */
+export function renderJournalPage(db: Database, date?: string, entryId?: number): {
+  panel1: string;
+  panel2: string;
+  panel3: string;
+} {
+  // If no date specified, use the most recent
+  if (!date) {
+    const row = db.query(`SELECT date FROM journal_entries ORDER BY date DESC LIMIT 1`).get() as { date: string } | null;
+    date = row?.date;
+  }
+
+  const panel1 = renderJournalDateIndex(db, date);
+
+  if (!date) {
+    return { panel1, panel2: '<div class="empty-state">No journal entries yet.</div>', panel3: "" };
+  }
+
+  const panel2 = renderJournalEntries(db, date, entryId ?? undefined);
+
+  // Default panel 3: show conversation for first entry if no entry selected
+  let panel3 = '<div class="empty-state">Select an entry to view conversations.</div>';
+  if (entryId) {
+    panel3 = renderEntryConversations(db, entryId);
+  } else {
+    const firstEntry = db.query(`
+      SELECT id FROM journal_entries WHERE date = ? ORDER BY project_id LIMIT 1
+    `).get(date) as { id: number } | null;
+    if (firstEntry) {
+      panel3 = renderEntryConversations(db, firstEntry.id);
+    }
+  }
+
+  return { panel1, panel2, panel3 };
+}
+
+/**
+ * Render conversations for a journal entry (for Panel 3).
+ */
+export function renderEntryConversations(db: Database, entryId: number, sessionIndex: number = 0): string {
+  const entry = db.query(`SELECT session_ids FROM journal_entries WHERE id = ?`).get(entryId) as { session_ids: string } | null;
+  if (!entry) return '<div class="empty-state">Entry not found.</div>';
+
+  const sessionIds: string[] = JSON.parse(entry.session_ids || "[]");
+  if (sessionIds.length === 0) return '<div class="empty-state">No sessions for this entry.</div>';
+
+  const idx = Math.max(0, Math.min(sessionIndex, sessionIds.length - 1));
+  const sessionId = sessionIds[idx]!;
+
+  const convo = db.query(`SELECT conversation_markdown FROM conversations WHERE session_id = ?`).get(sessionId) as { conversation_markdown: string } | null;
+
+  let html = "";
+  // Session navigator
+  if (sessionIds.length > 1) {
+    html += `<div class="conversation-nav">`;
+    html += `Session ${idx + 1} of ${sessionIds.length}`;
+    if (idx > 0) {
+      html += ` · <a hx-get="/api/journal/conversation?entry_id=${entryId}&session_idx=${idx - 1}" hx-target="#panel-detail">&larr; Prev</a>`;
+    }
+    if (idx < sessionIds.length - 1) {
+      html += ` · <a hx-get="/api/journal/conversation?entry_id=${entryId}&session_idx=${idx + 1}" hx-target="#panel-detail">Next &rarr;</a>`;
+    }
+    html += `</div>`;
+  }
+
+  if (convo) {
+    const { renderConversation } = require("./conversation");
+    html += renderConversation(convo.conversation_markdown);
+  } else {
+    html += '<div class="empty-state">Conversation not available.</div>';
+  }
+
+  return html;
 }
