@@ -34,7 +34,7 @@ SQLite doesn't support `ADD COLUMN IF NOT EXISTS`, so we use a try/catch around 
 
 - [ ] **Step 1: Add the ALTER TABLE migration to initDb**
 
-In `src/db.ts`, after the `CREATE INDEX` statements (after line 61, before closing the template literal and `_db = db`), add:
+In `src/db.ts`, after the `db.exec(...)` call that creates the tables and indexes (after line 61), add as a separate statement before `_db = db`:
 
 ```typescript
   // Migrations
@@ -94,6 +94,7 @@ OPEN_QUESTIONS: ["Need to add email verification step to onboarding", "Should we
 SUMMARY: Fixed a typo.
 TOPICS: ["bugfix"]`;
     const result = parseSummaryResponse(response);
+    expect(result.topics).toEqual(["bugfix"]);
     expect(result.openQuestions).toEqual([]);
   });
 ```
@@ -130,7 +131,7 @@ export function parseSummaryResponse(response: string): SummaryResult {
     /SUMMARY:\s*([\s\S]*?)(?=\nTOPICS:)/
   );
   const topicsSection = response.match(
-    /TOPICS:\s*([\s\S]*?)(?=\nOPEN_QUESTIONS:|\s*$)/
+    /TOPICS:\s*([\s\S]*?)(?=\nOPEN_QUESTIONS:|$)/
   );
   const openQuestionsSection = response.match(
     /OPEN_QUESTIONS:\s*([\s\S]*?)$/
