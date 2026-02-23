@@ -8,6 +8,7 @@ export type Config = {
   db_path: string;
   port: number;
   day_start_hour: number;
+  summary_instructions: string;
 };
 
 export function defaultConfig(): Config {
@@ -18,6 +19,7 @@ export function defaultConfig(): Config {
     db_path: join(configDir, "notebook.db"),
     port: 3000,
     day_start_hour: 5,
+    summary_instructions: "",
   };
 }
 
