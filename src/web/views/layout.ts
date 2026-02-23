@@ -248,6 +248,17 @@ export function renderLayout(title: string, content: LayoutContent): string {
       color: var(--text-ghost);
       margin-top: 6px;
     }
+    .entry-questions {
+      margin-top: 6px;
+      padding-left: 14px;
+      font-size: 12px;
+      color: var(--text-faint);
+      line-height: 1.5;
+    }
+    .entry-questions li {
+      margin-bottom: 2px;
+      list-style-type: '→ ';
+    }
 
     /* Conversation transcript */
     .conversation-nav {

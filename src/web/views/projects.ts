@@ -15,6 +15,7 @@ type ProjectEntryRow = {
   summary: string;
   topics: string;
   session_ids: string;
+  open_questions: string;
 };
 
 /**
@@ -51,7 +52,7 @@ export function renderProjectTimeline(db: Database, projectId: string, selectedE
   const name = project?.display_name || projectId;
 
   const entries = db.query(`
-    SELECT je.id, je.date, je.headline, je.summary, je.topics, je.session_ids
+    SELECT je.id, je.date, je.headline, je.summary, je.topics, je.session_ids, je.open_questions
     FROM journal_entries je
     WHERE je.project_id = ?
     ORDER BY je.date DESC
@@ -93,6 +94,14 @@ export function renderProjectTimeline(db: Database, projectId: string, selectedE
             html += `<span class="entry-tag">${escapeHtml(t)}</span>`;
           }
           html += `</div>`;
+        }
+        const openQuestions: string[] = JSON.parse(entry.open_questions || "[]");
+        if (openQuestions.length > 0) {
+          html += `<ul class="entry-questions">`;
+          for (const q of openQuestions) {
+            html += `<li>${escapeHtml(q)}</li>`;
+          }
+          html += `</ul>`;
         }
         html += `<div class="entry-stats">${sessionIds.length} session${sessionIds.length !== 1 ? "s" : ""}</div>`;
         html += `</a>`;

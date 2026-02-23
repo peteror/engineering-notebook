@@ -11,6 +11,7 @@ type JournalEntryRow = {
   summary: string;
   topics: string;
   session_ids: string;
+  open_questions: string;
 };
 
 type DateProjectsRow = {
@@ -59,7 +60,7 @@ export function renderJournalDateIndex(db: Database, selectedDate?: string): str
  */
 export function renderJournalEntries(db: Database, date: string, selectedEntryId?: number): string {
   const entries = db.query(`
-    SELECT je.id, je.date, je.project_id, p.display_name, je.headline, je.summary, je.topics, je.session_ids
+    SELECT je.id, je.date, je.project_id, p.display_name, je.headline, je.summary, je.topics, je.session_ids, je.open_questions
     FROM journal_entries je
     JOIN projects p ON je.project_id = p.id
     WHERE je.date = ?
@@ -93,6 +94,14 @@ export function renderJournalEntries(db: Database, date: string, selectedEntryId
         html += `<span class="entry-tag">${escapeHtml(t)}</span>`;
       }
       html += `</div>`;
+    }
+    const openQuestions: string[] = JSON.parse(entry.open_questions || "[]");
+    if (openQuestions.length > 0) {
+      html += `<ul class="entry-questions">`;
+      for (const q of openQuestions) {
+        html += `<li>${escapeHtml(q)}</li>`;
+      }
+      html += `</ul>`;
     }
     html += `<div class="entry-stats">${sessionIds.length} session${sessionIds.length !== 1 ? "s" : ""}${timeRange ? ` · ${timeRange}` : ""}</div>`;
     html += `</a>`;
