@@ -27,8 +27,7 @@ bun link  # makes `notebook` available globally
 # 1. Ingest your Claude Code sessions (defaults to ~/.claude/projects)
 notebook ingest
 
-# 2. Generate journal summaries (requires ANTHROPIC_API_KEY)
-export ANTHROPIC_API_KEY=sk-ant-...
+# 2. Generate journal summaries (uses Claude Code's auth)
 notebook summarize --all
 
 # 3. Browse your journal
