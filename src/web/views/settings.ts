@@ -177,6 +177,17 @@ export function renderSettings(config: Config): string {
   html += `</div>`;
   html += `</div>`;
 
+  // Calendar feed
+  html += `<div class="settings-group">`;
+  html += `<div class="settings-label">Calendar Feed</div>`;
+  html += `<div class="settings-help">Subscribe in Apple Calendar or any iCal-compatible app.</div>`;
+  const icalUrl = `webcal://localhost:${config.port}/api/calendar.ics`;
+  html += `<div style="display: flex; align-items: center; gap: 8px;">`;
+  html += `<code style="font-size: 12px; user-select: all;">${escapeHtml(icalUrl)}</code>`;
+  html += `<button type="button" class="settings-btn-secondary" onclick="navigator.clipboard.writeText('${icalUrl}');this.textContent='Copied!';setTimeout(()=>this.textContent='Copy URL',1500)">Copy URL</button>`;
+  html += `</div>`;
+  html += `</div>`;
+
   // Port
   html += `<div class="settings-group">`;
   html += `<div class="settings-label">Server Port</div>`;

@@ -1,7 +1,7 @@
 import { escapeHtml } from "./helpers";
 
 type ThreePanelContent = {
-  activeTab: "journal" | "projects";
+  activeTab: "journal" | "projects" | "calendar";
   panel1: string;
   panel2: string;
   panel3: string;
@@ -9,17 +9,31 @@ type ThreePanelContent = {
 
 type SingleContent = {
   body: string;
+  activeTab?: "calendar";
 };
 
-type LayoutContent = ThreePanelContent | SingleContent;
+type FullWidthContent = {
+  fullBody: string;
+  activeTab: "calendar";
+};
+
+type LayoutContent = ThreePanelContent | SingleContent | FullWidthContent;
 
 function isThreePanel(c: LayoutContent): c is ThreePanelContent {
   return "panel1" in c;
 }
 
+function isFullWidth(c: LayoutContent): c is FullWidthContent {
+  return "fullBody" in c;
+}
+
 export function renderLayout(title: string, content: LayoutContent): string {
-  const journalActive = isThreePanel(content) && content.activeTab === "journal";
-  const projectsActive = isThreePanel(content) && content.activeTab === "projects";
+  const activeTab = isThreePanel(content) ? content.activeTab
+    : isFullWidth(content) ? content.activeTab
+    : (content as SingleContent).activeTab;
+  const journalActive = activeTab === "journal";
+  const projectsActive = activeTab === "projects";
+  const calendarActive = activeTab === "calendar";
 
   let bodyHtml: string;
   if (isThreePanel(content)) {
@@ -29,6 +43,8 @@ export function renderLayout(title: string, content: LayoutContent): string {
         <div class="panel panel-entries" id="panel-entries">${content.panel2}</div>
         <div class="panel panel-detail" id="panel-detail">${content.panel3}</div>
       </div>`;
+  } else if (isFullWidth(content)) {
+    bodyHtml = `<div class="full-content">${content.fullBody}</div>`;
   } else {
     bodyHtml = `<div class="single-content">${content.body}</div>`;
   }
@@ -521,6 +537,152 @@ export function renderLayout(title: string, content: LayoutContent): string {
     }
     .entry-card-pending { animation: pulse-fade 2s ease-in-out infinite; }
 
+    /* Full-width content (calendar) */
+    .full-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Calendar toolbar */
+    .calendar-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 8px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+      flex-shrink: 0;
+    }
+    .calendar-period {
+      font-weight: 600;
+      font-family: var(--font-serif);
+      font-size: 15px;
+      min-width: 0;
+    }
+    .calendar-arrows {
+      display: flex;
+      gap: 2px;
+    }
+    .calendar-arrows a, .calendar-today a {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 28px;
+      height: 28px;
+      border-radius: 5px;
+      color: var(--text-faint);
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .calendar-arrows a:hover, .calendar-today a:hover {
+      color: var(--text);
+      background: var(--surface);
+    }
+    .calendar-today a {
+      width: auto;
+      padding: 0 10px;
+      font-size: 12px;
+    }
+    .calendar-mode-toggle { display: flex; gap: 0; }
+    .calendar-mode-toggle a {
+      padding: 3px 10px;
+      font-size: 11px;
+      border: 1px solid var(--border);
+      color: var(--text-faint);
+      text-decoration: none;
+    }
+    .calendar-mode-toggle a:first-child { border-radius: 4px 0 0 4px; }
+    .calendar-mode-toggle a:last-child { border-radius: 0 4px 4px 0; border-left: none; }
+    .calendar-mode-toggle a.active {
+      background: var(--text);
+      color: var(--bg);
+      border-color: var(--text);
+    }
+
+    /* Gantt grid */
+    .gantt-wrap {
+      flex: 1;
+      overflow: auto;
+    }
+    .gantt-grid {
+      display: grid;
+      gap: 1px 0;
+      min-width: 100%;
+    }
+    .gantt-header {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--text-ghost);
+      padding: 8px 4px;
+      text-align: center;
+      text-decoration: none;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border-subtle);
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+    .gantt-header:hover { color: var(--text-muted); }
+    .gantt-header:last-child { border-right: none; }
+    .gantt-header-today { color: var(--text); font-weight: 700; }
+    .gantt-corner {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      left: 0;
+      z-index: 2;
+    }
+    .gantt-label {
+      font-size: 12px;
+      color: var(--text-muted);
+      text-decoration: none;
+      padding: 6px 12px;
+      background: var(--surface);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      border-right: 1px solid var(--border);
+      position: sticky;
+      left: 0;
+      z-index: 1;
+    }
+    .gantt-label:hover { color: var(--text); }
+    .gantt-label-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .gantt-cell {
+      background: var(--bg);
+      padding: 4px 0;
+      min-height: 34px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .gantt-bar {
+      display: block;
+      height: 100%;
+      min-height: 26px;
+      border-radius: 0;
+      opacity: 0.8;
+      text-decoration: none;
+    }
+    .gantt-bar:hover { opacity: 1; }
+    .gantt-bar-single { border-radius: 4px; margin: 0 3px; }
+    .gantt-bar-start { border-radius: 4px 0 0 4px; margin-left: 3px; }
+    .gantt-bar-end { border-radius: 0 4px 4px 0; margin-right: 3px; }
+    .gantt-bar-mid { border-radius: 0; }
+
     /* Misc */
     .page-title {
       font-size: 18px;
@@ -551,6 +713,7 @@ export function renderLayout(title: string, content: LayoutContent): string {
     <nav>
       <a href="/"${journalActive ? ' class="active"' : ""}>Journal</a>
       <a href="/projects"${projectsActive ? ' class="active"' : ""}>Projects</a>
+      <a href="/calendar"${calendarActive ? ' class="active"' : ""}>Calendar</a>
     </nav>
     <div class="spacer"></div>
     <form action="/search" method="get" style="display:flex;">
@@ -559,6 +722,7 @@ export function renderLayout(title: string, content: LayoutContent): string {
     <a href="/settings" class="settings-link" title="Settings">&#9881;</a>
   </div>
   ${bodyHtml}
+  <script>document.querySelector('.entry-card.selected')?.scrollIntoView({block:'center'})</script>
 </body>
 </html>`;
 }

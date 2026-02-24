@@ -81,3 +81,18 @@ export function groupByTimeBucket(
 
   return buckets;
 }
+
+const PROJECT_COLORS = [
+  "#6366f1", "#8b5cf6", "#ec4899", "#f43f5e",
+  "#f97316", "#eab308", "#22c55e", "#14b8a6",
+  "#06b6d4", "#3b82f6", "#a855f7", "#d946ef",
+];
+
+/** Assign a stable color to a project ID via string hash. */
+export function projectColor(projectId: string): string {
+  let hash = 0;
+  for (let i = 0; i < projectId.length; i++) {
+    hash = ((hash << 5) - hash + projectId.charCodeAt(i)) | 0;
+  }
+  return PROJECT_COLORS[Math.abs(hash) % PROJECT_COLORS.length]!;
+}

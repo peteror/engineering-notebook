@@ -23,7 +23,7 @@ export type ProjectEntryRow = {
  * Build a WHERE clause fragment that excludes projects matching glob patterns.
  * Returns empty string if no patterns, otherwise " AND NOT id GLOB ? AND NOT ...".
  */
-function excludeWhere(exclude: string[]): { sql: string; params: string[] } {
+export function excludeWhere(exclude: string[]): { sql: string; params: string[] } {
   if (exclude.length === 0) return { sql: "", params: [] };
   const clauses = exclude.map(() => "id GLOB ?");
   return {
@@ -65,7 +65,7 @@ export function renderEntryCard(entry: ProjectEntryRow, projectId: string, isSel
   const sessionIds: string[] = JSON.parse(entry.session_ids || "[]");
   const topics: string[] = JSON.parse(entry.topics || "[]");
 
-  let html = `<a class="entry-card${isSelected ? " selected" : ""}" href="/projects/${encodeURIComponent(projectId)}/${entry.id}" hx-get="/api/journal/conversation?entry_id=${entry.id}" hx-target="#panel-detail">`;
+  let html = `<a id="entry-${entry.id}" class="entry-card${isSelected ? " selected" : ""}" href="/projects/${encodeURIComponent(projectId)}/${entry.id}" hx-get="/api/journal/conversation?entry_id=${entry.id}" hx-target="#panel-detail">`;
   html += `<div class="entry-label">${formatDateShort(entry.date)}</div>`;
   if (entry.headline) {
     html += `<div class="entry-headline">${escapeHtml(entry.headline)}</div>`;

@@ -6,6 +6,7 @@ import { renderProjectsPage, renderProjectTimeline, renderProjectIndex } from ".
 import { renderSearch, renderSearchResults } from "./views/search";
 import { renderSettings, renderRemoteSourceCard, renderSyncStatus } from "./views/settings";
 import { renderSessionDetail } from "./views/session";
+import { renderCalendarPage, renderIcalFeed, weekMonday } from "./views/calendar";
 import { escapeHtml } from "./views/helpers";
 import { loadConfig, saveConfig, resolveConfigPath, type RemoteSource } from "../config";
 import type { SyncManager } from "../sync";
@@ -94,6 +95,29 @@ export function createApp(db: Database, syncManager: SyncManager): Hono {
       return c.html(renderSearchResults(db, q));
     }
     return c.html(renderLayout("Search — Engineering Notebook", { body: renderSearch(db, q) }));
+  });
+
+  // Calendar
+  app.get("/calendar", (c) => {
+    const config = loadConfig();
+    const mode = (c.req.query("mode") === "month" ? "month" : "week") as "week" | "month";
+    const today = new Date().toISOString().slice(0, 10);
+    const ref = c.req.query("ref") || (mode === "month" ? today.slice(0, 7) + "-01" : weekMonday(today));
+    const calendarHtml = renderCalendarPage(db, mode, ref, config.exclude);
+    if (c.req.header("HX-Request")) {
+      return c.html(calendarHtml);
+    }
+    const fullBody = `<div id="calendar-page">${calendarHtml}</div>`;
+    return c.html(renderLayout("Calendar — Engineering Notebook", { fullBody, activeTab: "calendar" }));
+  });
+
+  // iCal feed
+  app.get("/api/calendar.ics", (c) => {
+    const config = loadConfig();
+    const ical = renderIcalFeed(db, config.exclude);
+    return new Response(ical, {
+      headers: { "Content-Type": "text/calendar; charset=utf-8" },
+    });
   });
 
   // Settings (GET)
