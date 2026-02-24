@@ -565,7 +565,7 @@ export function renderLayout(title: string, content: LayoutContent): string {
       display: flex;
       gap: 2px;
     }
-    .calendar-arrows a, .calendar-today a {
+    .calendar-arrows a {
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -576,14 +576,9 @@ export function renderLayout(title: string, content: LayoutContent): string {
       text-decoration: none;
       font-size: 14px;
     }
-    .calendar-arrows a:hover, .calendar-today a:hover {
+    .calendar-arrows a:hover {
       color: var(--text);
       background: var(--surface);
-    }
-    .calendar-today a {
-      width: auto;
-      padding: 0 10px;
-      font-size: 12px;
     }
     .calendar-mode-toggle { display: flex; gap: 0; }
     .calendar-mode-toggle a {

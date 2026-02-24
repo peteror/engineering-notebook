@@ -228,7 +228,6 @@ export function renderCalendarPage(
   // Navigation
   const prevRef = mode === "week" ? addDays(startDate, -7) : addDays(startDate, -1).slice(0, 7) + "-01";
   const nextRef = mode === "week" ? addDays(startDate, 7) : addDays(endDate, 1);
-  const todayRef = mode === "week" ? weekMonday(today) : today.slice(0, 7) + "-01";
   const period = periodLabel(startDate, endDate, mode);
 
   const hx = (url: string) => `href="${url}" hx-get="${url}" hx-target="#calendar-page" hx-swap="innerHTML" hx-push-url="true"`;
@@ -239,7 +238,6 @@ export function renderCalendarPage(
   html += `<a ${hx(`/calendar?mode=${mode}&ref=${nextRef}`)} title="Next">&rsaquo;</a>`;
   html += `</div>`;
   html += `<div class="calendar-period">${escapeHtml(period)}</div>`;
-  html += `<div class="calendar-today"><a href="/?date=${today}">Today</a></div>`;
   html += `<div class="calendar-mode-toggle">`;
   html += `<a ${hx(`/calendar?mode=week&ref=${startDate}`)} class="${mode === "week" ? "active" : ""}">Week</a>`;
   html += `<a ${hx(`/calendar?mode=month&ref=${startDate}`)} class="${mode === "month" ? "active" : ""}">Month</a>`;
